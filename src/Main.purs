@@ -3,6 +3,7 @@ module Main where
 import Prelude
 import Control.Monad.Eff.Ref
 import Graphics.Canvas as C
+import Control.Apply (lift2)
 import Control.Monad.Eff (Eff, foreachE)
 import Control.Monad.Eff.Console (CONSOLE, log)
 import Control.Monad.Eff.Random (RANDOM, random, randomInt)
@@ -57,7 +58,7 @@ initialState = do
 
 update :: forall e. GameState -> Eff ( random :: RANDOM | e ) GameState
 update gs@{ particles, leftButton : lb, rightButton : rb } = do
-    particles' <- (mouseCheck lb attractParticles >>> mouseCheck rb repelParticles >>> updateParticles) particles
+    particles' <- (mouseCheck lb (affectParticles attract) >>> mouseCheck rb (affectParticles repel) >>> updateParticles) particles
     pure (gs { particles = particles' })
     where
         mouseCheck :: ClickData -> (Number -> Number -> Array Particle -> Array Particle) -> Array Particle -> Array Particle
@@ -68,7 +69,7 @@ update gs@{ particles, leftButton : lb, rightButton : rb } = do
             --shouldChange <- random
             --ifM (random <#> ((flip (>)) 0.97)) (do
             --ifM (pure (shouldChange > 0.97)) (do
-            ifM (cmp random (>) 0.97) (do
+            ifM (cmp random (>) (pure 0.97)) (do
                     rcx <- random
                     rcy <- random
                     pure (updateParticle (scaleR rcx) (scaleR rcy) p)
@@ -80,8 +81,8 @@ update gs@{ particles, leftButton : lb, rightButton : rb } = do
                 scaleR :: Number -> Number
                 scaleR a = a * 10.0 - 5.0
 
-                cmp :: forall a f. (Ord a, Functor f) => f a -> (a -> a -> Boolean) -> a -> f Boolean
-                cmp a c b = a <#> ((flip c) b)
+                cmp :: forall a f. (Ord a, Apply f) => f a -> (a -> a -> Boolean) -> f a -> f Boolean
+                cmp = flip lift2
 
         updateParticle :: Number -> Number -> Particle -> Particle
         updateParticle rx ry p =
@@ -109,35 +110,23 @@ update gs@{ particles, leftButton : lb, rightButton : rb } = do
 
             in (wrapEdges screenSize >>> clampVel) p2
 
-        attractParticles :: Number -> Number -> Array Particle -> Array Particle
-        attractParticles x y particles = particles <#> attract x y
+        affectParticles :: (Number -> Number -> Particle -> Particle) -> Number -> Number -> Array Particle -> Array Particle
+        affectParticles f x y = map (f x y)
+
+        pointTo :: Number -> Number -> Number -> Particle -> Particle
+        pointTo strength x y p = p { vx = p.vx + dx * strength, vy = p.vy + dy * strength }
             where
-                attract :: Number -> Number -> Particle -> Particle
-                attract x y p = p { vx = p.vx + dx * strength, vy = p.vy + dy * strength }
-                    where
-                        strength :: Number
-                        strength = 1.0
+                dx :: Number
+                dx = cos (atan2 (y - p.y) (x - p.x))
 
-                        dx :: Number
-                        dx = cos (atan2 (y - p.y) (x - p.x))
+                dy :: Number
+                dy = sin (atan2 (y - p.y) (x - p.x))
 
-                        dy :: Number
-                        dy = sin (atan2 (y - p.y) (x - p.x))
+        attract :: Number -> Number -> Particle -> Particle
+        attract = pointTo 1.0
 
-        repelParticles :: Number -> Number -> Array Particle -> Array Particle
-        repelParticles x y particles = particles <#> repel x y
-            where
-                repel :: Number -> Number -> Particle -> Particle
-                repel x y p = p { vx = p.vx - dx * strength, vy = p.vy - dy * strength }
-                    where
-                        strength :: Number
-                        strength = 1.0
-
-                        dx :: Number
-                        dx = cos (atan2 (y - p.y) (x - p.x))
-
-                        dy :: Number
-                        dy = sin (atan2 (y - p.y) (x - p.x))
+        repel :: Number -> Number -> Particle -> Particle
+        repel = pointTo (-1.0)
 
 clearCanvas :: forall e. C.Context2D -> Eff ( canvas :: C.CANVAS | e ) Unit
 clearCanvas ctx = void do
