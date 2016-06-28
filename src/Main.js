@@ -10,7 +10,7 @@ exports.requestAnimationFrame = function(f) {
     };
 };
 
-exports.onMove = function(button) {
+exports.onMouseMove = function(button) {
     return function(f) {
         return function() {
             document.addEventListener("mousemove", function(e) {
